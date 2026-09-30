@@ -1,0 +1,24 @@
+[project]
+name = "superauditor-check"
+version = "0.1.0"
+description = "Check an MCP server's get_session_findings against the SuperAuditor standard, from outside the server"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["mcp>=2.2,<3", "jsonschema>=4.18"]
+
+[project.scripts]
+superauditor-check = "superauditor_check.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest>=8", "anyio>=4"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/superauditor_check"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"schema/get_session_findings.response.schema.json" = "superauditor_check/response.schema.json"

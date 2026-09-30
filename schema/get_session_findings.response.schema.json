@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Cloto-dev/superauditor/blob/main/schema/get_session_findings.response.schema.json",
+  "title": "SuperAuditor get_session_findings response (v1.1)",
+  "description": "The shape of the response in STANDARD.md section 5.2. Relations between fields (counts agree with findings, capped kinds, ordering) are not expressible here; STANDARD.md and the conformance checker cover them. Where this schema and STANDARD.md disagree, STANDARD.md wins.",
+  "type": "object",
+  "required": ["findings", "total", "counts_by_kind", "counts_by_severity", "capped_kinds", "per_kind_limit", "_meta"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "total": { "type": "integer", "minimum": 0 },
+    "counts_by_kind": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 1 }
+    },
+    "counts_by_severity": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/severity" },
+      "additionalProperties": { "type": "integer", "minimum": 1 }
+    },
+    "capped_kinds": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "per_kind_limit": { "type": "integer", "minimum": 1 },
+    "summary": { "type": "string" },
+    "identity_shared": { "type": "boolean" },
+    "_meta": {
+      "type": "object",
+      "required": ["server_version"],
+      "properties": {
+        "server_version": { "type": "string", "minLength": 1 },
+        "superauditor": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" }
+      }
+    }
+  },
+  "$defs": {
+    "severity": { "enum": ["critical", "warn", "info"] },
+    "finding": {
+      "type": "object",
+      "required": ["kind", "severity"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "severity": { "$ref": "#/$defs/severity" }
+      }
+    }
+  }
+}
