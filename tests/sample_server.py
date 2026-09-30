@@ -36,6 +36,12 @@ def run_probes(limit, session_key):
 
 
 def respond(session_key, per_kind_limit, include_summary):
+    if per_kind_limit < 1 and VARIANT == "applies_zero":
+        response = ref.deliver(run_probes(per_kind_limit + 1, session_key), per_kind_limit, SEVERITY)
+        response["_meta"] = {"server_version": "0.0.1", "superauditor": ref.SUPERAUDITOR_VERSION}
+        return response
+    if per_kind_limit < 1 and VARIANT == "defaults_on_zero":
+        per_kind_limit = ref.DEFAULT_PER_KIND_LIMIT
     response = ref.get_session_findings(run_probes, SEVERITY, "0.0.1", session_key, per_kind_limit, include_summary)
     if VARIANT == "silent_truncation":
         response["capped_kinds"] = []

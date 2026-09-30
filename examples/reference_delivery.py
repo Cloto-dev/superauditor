@@ -68,6 +68,9 @@ def render_summary(delivered):
 def get_session_findings(run_probes, severity, server_version, session_key=None,
                          per_kind_limit=DEFAULT_PER_KIND_LIMIT, include_summary=True):
     """The tool body. Probing at limit + 1 is what makes capped_kinds an observation."""
+    if isinstance(per_kind_limit, bool) or not isinstance(per_kind_limit, int) or per_kind_limit < 1:
+        # §5.1: never apply it. A limit of 0 would return an empty set that reads as "no findings".
+        raise ValueError(f"per_kind_limit must be an integer of at least 1, got {per_kind_limit!r}")
     detector_output = run_probes(per_kind_limit + 1, session_key)
     response = deliver(detector_output, per_kind_limit, severity)
     if include_summary:

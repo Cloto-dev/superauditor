@@ -58,16 +58,19 @@ get_session_findings(session_key?, per_kind_limit = 5, include_summary = true)
 3. **Check it:**
 
    ```bash
-   uvx --from git+https://github.com/Cloto-dev/superauditor superauditor-check -- <command that starts your server>
+   uvx --from git+https://github.com/Cloto-dev/superauditor superauditor-check --require-version 1.1 -- <command that starts your server>
    # or, for a server over streamable HTTP:
-   uvx --from git+https://github.com/Cloto-dev/superauditor superauditor-check --url https://example.com/mcp --header "Authorization: Bearer $TOKEN"
+   uvx --from git+https://github.com/Cloto-dev/superauditor superauditor-check --require-version 1.1 --url https://example.com/mcp --header "Authorization: Bearer $TOKEN"
    ```
 
-The checker pulls the findings three times — with no arguments, at
-`per_kind_limit=1` and at `per_kind_limit=200` — and compares the pulls: a kind
-with two or more findings at the higher limit must have been reported capped at
-the lower one, and the rows kept at the lower limit must be the first rows of
-the higher pull. It reads nothing and writes nothing else. Some requirements
+The checker pulls the findings with no arguments, at `per_kind_limit=1` and
+at `per_kind_limit=200`, and compares the pulls: a kind with two or more
+findings at the higher limit must have been reported capped at the lower one,
+and the rows kept at the lower limit must be the first rows of the higher pull.
+It also asks for a limit of 0, which must be refused or replaced by the default,
+never applied. It calls nothing else. Its last line names the version a pass is
+about: without `--require-version`, a server that names no version is checked
+as v1. Some requirements
 cannot be seen from outside; [STANDARD.md §9](STANDARD.md#9-conformance) says
 which, and how to show them with your own tests.
 
@@ -96,10 +99,15 @@ open an issue with what did not fit.
 
 ## Status and versioning
 
-v1.1. Minor versions only add clarifications; a change that would make a
+v1.1 (2026-09-30); see [CHANGELOG.md](CHANGELOG.md). Minor versions only add clarifications; a change that would make a
 conforming implementation non-conforming is a new major version with a
 migration note. A server states the version it conforms to in
 `_meta.superauditor`.
+
+## Contributing
+
+Questions, a new implementation, or a requirement that did not fit your server:
+see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

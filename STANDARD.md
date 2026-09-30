@@ -17,7 +17,9 @@ written. v1.1 adds what the second implementation, CPersona (2.5.10 and later),
 had to decide that v1 did not say: how a deterministic escalation fits a static
 severity map (§4), what a probe that could not run looks like (§5.4), and what
 happens when a detector's own output uses a reserved key (§3). It also has a
-response state the version it conforms to (§5.2).
+response state the version it conforms to (§5.2), states what an invalid
+limit does (§5.1), and corrects v1's treatment of authorization boundaries
+(§7).
 
 Both implementations are Python MCP servers by the same maintainer. Treat
 requirements that look unusual as evidence from two related systems, not as
@@ -64,7 +66,8 @@ In scope — the seam:
 - the `severity` vocabulary and how severity is assigned;
 - the pull tool, its parameters and its response;
 - honest reporting of truncation and of probes that did not run;
-- how findings relate to a caller's isolation filters and session identity;
+- how findings relate to a caller's authorization, read filters and session
+  identity;
 - how an existing broadcast is retired without breaking its consumers.
 
 Out of scope. These are named here because scope creep is the specific failure
@@ -190,6 +193,13 @@ second-guess it by rate-limiting or caching stale results.
 `include_summary=false` exists because the prose restates `findings`. A machine
 consumer MUST be able to decline paying for it.
 
+**Invalid input (v1.1).** `per_kind_limit`, when given, MUST be an integer of
+at least 1. An implementation MUST NOT apply any other value — a limit of 0
+would return an empty set that reads as "no findings", the one wrong answer
+this channel exists to prevent. It either refuses the call, or applies the
+default and echoes the limit it applied in `per_kind_limit` (§5.2), so the
+substitution is visible. CPersona refuses; CScheduler applies the default.
+
 ### 5.2 The response
 
 ```json
@@ -293,12 +303,29 @@ no key declared — the implementation MUST say so with `identity_shared: true`
 rather than guessing. Degrading honestly is required; degrading without saying
 so is not conforming.
 
-**Isolation filters.** Findings MUST NOT be filtered by the caller's isolation
-axes (project, agent, tenant, or equivalent). The purpose of the channel is to
-surface forgotten state, and slicing it by the bucket the caller happens to be
-reading would hide exactly the records that were forgotten. Implementations MUST
-document this, because it is the opposite of what every other read in such a
-server does.
+Two different things narrow what a read returns, and this standard treats them
+in opposite ways.
+
+**Authorization boundaries MUST be respected.** A response MUST NOT contain a
+finding about data the caller is not authorized to read: another tenant's
+store, another user's records, anything the server would refuse to return on an
+ordinary read. A finding's payload is data too — an identifier, a title or a
+count can disclose what the caller may not see. A caller that may read only
+part of the store SHOULD be refused rather than given a narrowed set that does
+not say it is narrowed, because a set narrowed without saying so hides forgotten
+state exactly as the next paragraph forbids. CPersona refuses the call unless
+the caller may read every agent's memory.
+
+**Read filters are not inherited.** Within the caller's authority, findings MUST
+NOT be filtered by the scoping a caller applies to its reads (project, agent,
+channel, or equivalent). The purpose of the channel is to surface forgotten
+state, and slicing it by the bucket the caller happens to be reading would hide
+exactly the records that were forgotten. Implementations MUST document this,
+because it is the opposite of what every other read in such a server does.
+
+v1 listed "tenant" among the axes findings must not be filtered by. That was a
+defect: where a tenant is an authorization boundary, v1's wording required a
+server to disclose one tenant's findings to another. v1.1 corrects it.
 
 ## 8. Coexisting with an existing broadcast
 
@@ -335,12 +362,14 @@ the following with tests. The last column says where each can be shown.
 | C4 | Severity comes from the static map; the same `kind` always yields the same `severity`. | fixtures, checker |
 | C5 | An unmapped `kind` resolves to `info` (if a fallback exists at all). | fixtures |
 | C6 | The severity map is exhaustive over the probe registry — a new probe with no entry fails a test rather than defaulting silently. | own tests |
-| C7 | Findings are not filtered by the caller's isolation axes. | own tests |
+| C7 | Within the caller's authorization, findings are not filtered by its read filters (§7). | own tests |
 | C8 | Under a shared transport with no declared `session_key`, the response carries `identity_shared: true`. | own tests |
 | C9 | With a broadcast present: the default knob value reproduces pre-change responses byte-for-byte, and each other value drops the push from exactly the responses it claims. | own tests |
 | C10 | A probe that raises is not indistinguishable from a probe that found nothing (§5.4). (v1.1) | own tests |
 | C11 | A detector's own `kind` or `severity` is never delivered under the reserved name, and a move never overwrites another payload key (§3). (v1.1) | own tests |
 | C12 | The response carries `_meta.superauditor` with the version claimed (§5.2). (v1.1) | checker |
+| C13 | No finding describes data the caller is not authorized to read (§7). (v1.1) | own tests |
+| C14 | A `per_kind_limit` below 1 is never applied: the call is refused, or the default is applied and echoed (§5.1). (v1.1) | checker |
 
 The fixtures are pure functions of (input findings, `per_kind_limit`) and so are
 language-independent: an implementation feeds each case's detector output
@@ -349,7 +378,8 @@ server and can show only what is visible from outside; it reads C2 by pulling
 twice at different limits (a kind with more findings at the higher limit than
 the lower one returned must have been capped at the lower one), and it also
 checks that the rows kept at the lower limit are the first rows of the higher
-pull (§6, ordering).
+pull (§6, ordering). It reads C14 by asking for a limit of 0: a tool error, an error
+object, or a response that echoes a limit of at least 1 all conform.
 
 An implementation that has no broadcast is exempt from C9.
 
@@ -363,7 +393,7 @@ by a migration note. The fixture directory is versioned with the major version
 
 An implementation states the version it conforms to in `_meta.superauditor`
 (§5.2). An implementation that conforms to v1 conforms to v1.1 once it adds that
-key and meets C10 and C11.
+key and meets C10, C11, C13 and C14.
 
 Canonical home: this repository. v1 was first published in the CPersona
 repository, which now points here.
@@ -377,4 +407,8 @@ repository, which now points here.
 - §5.4: a probe that did not run is reported, as a failed call or a
   `check_crashed` finding.
 - §6: the true count of a capped kind is out of scope; pull again for it.
-- §9: C10–C12, and where each requirement can be shown.
+- §5.1: `per_kind_limit` below 1 is refused or replaced by the default, never
+  applied.
+- §7: authorization boundaries are respected; read filters are not inherited.
+  v1's inclusion of "tenant" among the unfiltered axes is corrected.
+- §9: C10–C14, and where each requirement can be shown.

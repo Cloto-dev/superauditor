@@ -20,13 +20,14 @@ from superauditor_check.client import ToolError, call_json, find_tool, open_sess
 PARAMETERS = ("session_key", "per_kind_limit", "include_summary")
 
 
-async def run(args) -> list[checks.Result]:
+async def run(args) -> tuple[list[checks.Result], str | None]:
     results: list[checks.Result] = []
+    claimed = None
     base = {"session_key": args.session_key} if args.session_key else {}
     async with open_session(args.command or None, args.url, dict(args.header)) as session:
         tool = await find_tool(session, args.tool)
         if tool is None:
-            return [checks.Result("tool", False, f"server lists no tool named {args.tool!r}")]
+            return [checks.Result("tool", False, f"server lists no tool named {args.tool!r}")], None
         declared = set((tool.input_schema or {}).get("properties", {}) if hasattr(tool, "input_schema")
                        else (tool.inputSchema or {}).get("properties", {}))
         missing = [p for p in PARAMETERS if p not in declared]
@@ -34,6 +35,7 @@ async def run(args) -> list[checks.Result]:
                                      f"missing parameters: {missing}" if missing else f"{args.tool} declares {', '.join(PARAMETERS)}"))
 
         default = await call_json(session, args.tool, dict(base))
+        claimed = checks.claimed_version(default)
         schema = checks.load_schema()
         results.append(checks.check_shape(default, schema))
         results.append(checks.Result("default", default.get("per_kind_limit") == 5 and isinstance(default.get("summary"), str),
@@ -48,6 +50,11 @@ async def run(args) -> list[checks.Result]:
                 break
         for response in (low, high):
             results.append(checks.check_shape(response, schema))
+        try:
+            zero = await call_json(session, args.tool, {**base, "per_kind_limit": 0})
+            results.append(checks.check_zero_limit("response", zero))
+        except ToolError:
+            results.append(checks.check_zero_limit("tool_error", None))
         results += [
             checks.check_echo(low, args.low),
             checks.check_echo(high, args.high),
@@ -65,7 +72,7 @@ async def run(args) -> list[checks.Result]:
         results.append(checks.Result("findings", None,
                                      f"{high.get('total')} returned at limit {args.high} "
                                      f"({len(high.get('counts_by_kind', {}))} kind(s), capped: {high.get('capped_kinds')})"))
-    return _collapse(results)
+    return _collapse(results), claimed
 
 
 def _collapse(results: list[checks.Result]) -> list[checks.Result]:
@@ -76,6 +83,17 @@ def _collapse(results: list[checks.Result]) -> list[checks.Result]:
         if prev is None or (r.ok is False and prev.ok is not False):
             by_id[r.id] = r
     return list(by_id.values())
+
+
+def verdict(failed: list, claimed: str | None) -> str:
+    """The last line names the version the result is about, so a pass is never read as more than it is."""
+    if failed:
+        return f"{len(failed)} check(s) failed."
+    if claimed is None:
+        return ("Passes the externally checkable requirements of SuperAuditor v1 only: the server names no version "
+                "in _meta.superauditor, so it is read as v1. Add --require-version 1.1 to require v1.1.")
+    return (f"Passes the externally checkable requirements of SuperAuditor {claimed}, the version the server claims. "
+            "STANDARD.md section 9 lists the requirements only the server's own tests can show.")
 
 
 def _describe(exc: BaseException) -> str:
@@ -111,20 +129,20 @@ def main(argv: list[str] | None = None) -> int:
     if not args.url and not args.command:
         parser.error("give --url, or the server command after --")
 
+    claimed = None
     try:
-        results = asyncio.run(run(args))
+        results, claimed = asyncio.run(run(args))
     except Exception as exc:  # noqa: BLE001 - every failure is reported as a result, never as a traceback
         results = [checks.Result("call", False, _describe(exc))]
 
     failed = [r for r in results if r.ok is False]
     if args.json:
-        print(json.dumps({"ok": not failed, "results": [r.__dict__ for r in results]}, indent=2))
+        print(json.dumps({"ok": not failed, "claimed_version": claimed, "results": [r.__dict__ for r in results]}, indent=2))
     else:
         for r in results:
             mark = {True: "PASS", False: "FAIL", None: "INFO"}[r.ok]
             print(f"{mark:4}  {r.id:8}  {r.detail}")
-        print(f"\n{'conforms' if not failed else f'{len(failed)} check(s) failed'} (checked from outside the server;"
-              " see STANDARD.md section 9 for what that covers)")
+        print("\n" + verdict(failed, claimed))
     return 1 if failed else 0
 
 

@@ -151,3 +151,20 @@ def test_version_is_informational_unless_required():
 def test_the_reference_refuses_a_probe_that_emits_its_own_severity():
     with pytest.raises(ValueError):
         ref.deliver([{"kind": "stale", "severity": "warn"}], 5, SEVERITY)
+
+
+@pytest.mark.parametrize("outcome,response,passes", [
+    ("tool_error", None, True),
+    ("response", {"ok": False, "error": "per_kind_limit must be at least 1"}, True),
+    ("response", {"findings": [], "per_kind_limit": 5}, True),
+    ("response", {"findings": [], "per_kind_limit": 0}, False),
+    ("response", {"findings": []}, False),
+])
+def test_c14_accepts_refusal_or_an_echoed_default_and_nothing_else(outcome, response, passes):
+    assert checks.check_zero_limit(outcome, response).ok is passes
+
+
+@pytest.mark.parametrize("bad", [0, -1, True, "5", 2.5])
+def test_the_reference_refuses_a_limit_it_must_not_apply(bad):
+    with pytest.raises(ValueError):
+        ref.get_session_findings(lambda n, k: [], SEVERITY, "0.0.1", None, bad)

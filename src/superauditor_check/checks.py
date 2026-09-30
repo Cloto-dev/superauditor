@@ -156,6 +156,25 @@ def check_summary(with_summary: dict, without_summary: dict) -> Result:
     return Result("summary", True, "present when asked for, absent when declined")
 
 
+def check_zero_limit(outcome: str, response: dict | None) -> Result:
+    """C14: a per_kind_limit of 0 is refused, or replaced by the default and echoed; never applied.
+
+    ``outcome`` is "tool_error" when the call failed, else "response" with the parsed object.
+    """
+    if outcome == "tool_error":
+        return Result("C14", True, "per_kind_limit=0 was refused (tool error)")
+    if "findings" not in response and (response.get("ok") is False or "error" in response):
+        return Result("C14", True, "per_kind_limit=0 was refused (error object)")
+    applied = response.get("per_kind_limit")
+    if isinstance(applied, int) and not isinstance(applied, bool) and applied >= 1:
+        return Result("C14", True, f"per_kind_limit=0 was replaced by {applied}, and the response says so")
+    return Result("C14", False, f"per_kind_limit=0 was applied: the response echoes {applied!r}")
+
+
+def claimed_version(response: dict) -> str | None:
+    return (response.get("_meta") or {}).get("superauditor")
+
+
 def check_version(response: dict, required: str | None) -> Result:
     meta = response.get("_meta") or {}
     claimed = meta.get("superauditor")
